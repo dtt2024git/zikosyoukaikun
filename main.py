@@ -22,9 +22,9 @@ bot = discord.Client(intents=intents)
 # あなたのボットのトークンをここに貼り付けてください
 YOUR_BOT_TOKEN = ''
 # ロールを付与したいチャンネルのIDをここに貼り付けてください
-TARGET_CHANNEL_ID = 1389454783030628524
+TARGET_CHANNEL_ID = 
 # 付与したいロールのIDをここに貼り付けてください
-ROLE_TO_GIVE_ID = 1396770464830853151
+ROLE_TO_GIVE_ID = 
 
 # 管理者向けログを送信するチャンネルのIDをここに貼り付けてください
 ADMIN_LOG_CHANNEL_ID = 123456789012345678 # ← このIDを設定してください！
