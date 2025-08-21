@@ -19,7 +19,7 @@
 5.  「OAuth2」タブの「URL Generator」で、`bot` スコープと、必要な権限（例: `Manage Roles`, `Read Message History`, `Send Messages`, `Add Reactions`）を選択し、生成されたURLであなたのサーバーにボットを招待します。
 
 ### 2. Google Sheets APIの設定
-1.  [Google Cloud Console](https://console.cloud.com/) にアクセスします。
+1.  [Google Cloud Console](https://console.cloud.google.com/) にアクセスします。
 2.  新しいプロジェクトを作成するか、既存のプロジェクトを選択します。
 3.  「APIとサービス」>「ライブラリ」に移動し、「Google Drive API」と「Google Sheets API」を検索して**有効化**します。
 4.  「APIとサービス」>「認証情報」に移動し、「認証情報を作成」>「サービスアカウント」を選択します。
