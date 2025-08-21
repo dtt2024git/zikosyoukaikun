@@ -22,15 +22,14 @@ bot = discord.Client(intents=intents)
 # あなたのボットのトークンをここに貼り付けてください
 YOUR_BOT_TOKEN = ''
 # ロールを付与したいチャンネルのIDをここに貼り付けてください
-TARGET_CHANNEL_ID = 
+TARGET_CHANNEL_ID =
 # 付与したいロールのIDをここに貼り付けてください
-ROLE_TO_GIVE_ID = 
+ROLE_TO_GIVE_ID =
 
 # 管理者向けログを送信するチャンネルのIDをここに貼り付けてください
-ADMIN_LOG_CHANNEL_ID = 123456789012345678 # ← このIDを設定してください！
+ADMIN_LOG_CHANNEL_ID = 123456789012345678
 
 # Discord規約違反の年齢（13歳未満）が検出された際の絵文字 (管理者ログでのみ使用)
-# この設定は年齢検出ロジックが削除されたため、機能しなくなります。
 AGE_VIOLATION_EMOJI_FOR_ADMIN_LOG = '🚫'
 
 # ロール付与成功時のリアクション絵文字（元のメッセージに表示）
@@ -40,13 +39,11 @@ SUCCESS_REACTION_EMOJI = '⭕'
 FAILURE_REACTION_EMOJI = '❌' 
 
 # 年齢規約違反時に管理者ログチャンネルでメンションを有効にするか (True/False)
-# この設定は年齢検出ロジックが削除されたため、機能しなくなります。
-ENABLE_ADMIN_MENTION = True 
+ENABLE_ADMIN_MENTION = True # Trueにするとメンションが飛びます
 
 # 管理者ログチャンネルでメンションする文字列 (ロールIDまたはユーザーID)
 # 例: '<@&ロールID>' または '<@ユーザーID>'
-# この設定は年齢検出ロジックが削除されたため、機能しなくなります。
-ADMIN_MENTION_STRING = '<@&123456789012345678>'
+ADMIN_MENTION_STRING = '<@&123456789012345678>' # ← メンションしたいロールIDまたはユーザーIDに設定！
 
 
 # -- Google Sheets API --
@@ -54,9 +51,9 @@ ADMIN_MENTION_STRING = '<@&123456789012345678>'
 # JSONキーファイルのパス (ボットのPythonコードと同じディレクトリに配置)
 SERVICE_ACCOUNT_FILE = 'service_account.json'
 # 作成したGoogleスプレッドシートの名前
-SPREADSHEET_NAME = '幻の曲を探そう鯖のログ'
+SPREADSHEET_NAME = ''
 # データを書き込むシートの名前
-WORKSHEET_NAME = '自己紹介'
+WORKSHEET_NAME = ''
 
 # 鯖落ち対策設定
 # ログファイルの名前
@@ -135,8 +132,60 @@ async def _process_message_logic(message: discord.Message):
         hitokoto_keyword_found = '一言' in message_content_lower
 
         # --- 年齢違反の検出 ---
-        # 年齢検出ロジックは削除されました。
-        age_violation_detected = False 
+        age_violation_detected = False
+        
+        # メッセージを改行で分割し、各行をチェック
+        lines = message.content.lower().split('\n')
+
+        # 新しいルールに合わせた正規表現とキーワードリスト
+        # SR1: 0-12の数字（半角/全角）
+        num_0_12_regex = r'\b(0|1|2|3|4|5|6|7|8|9|10|11|12|０|１|２|３|４|５|６|７|８|９|１０|１１|１２)\b'
+        # SR1の年齢単位と括弧
+        age_unit_and_parentheses_regex = r'(歳|才|さい|\(|\))'
+        
+        # SR2: 小学生関連キーワード
+        elementary_keywords = ['小学生', '小学', '小1', '小２', '小3', '小４', '小5', '小６', '小１', '小２', '小３', '小４', '小５', '小６']
+        
+        # SR3: 中学1年生関連キーワード
+        middle_school_first_year_keywords = ['中一', '中1', '中学1年生', '中１', '中学1年', '中学１年', '中学１年生']
+        # SR3: 13の数字（半角/全角/漢字）
+        num_13_variations_regex = r'\b(13|１３|十三)\b'
+
+        for line in lines:
+            # この行がSR1, SR2, SR3のいずれかの条件に単体で適合したか
+            line_meets_any_sr_condition = False 
+            # この行に「年齢」という言葉があるか
+            is_age_word_present_on_line = '年齢' in line 
+
+            # --- Rule 1 (SR1): 0~12の数字と歳、才、さい、（、）、(、)がいずれか1つ以上同じ行にある場合 ---
+            # 例: 「私は10歳です」「私は(5才)」
+            if re.search(num_0_12_regex, line) and re.search(age_unit_and_parentheses_regex, line):
+                line_meets_any_sr_condition = True
+                print(f"年齢検出（SR1）: '{line}'")
+
+            # --- Rule 2 (SR2): 小学生、小学...のいずれかがある場合 ---
+            # 例: 「私は小学生です」「小学一年生になりました」
+            if any(keyword in line for keyword in elementary_keywords):
+                line_meets_any_sr_condition = True
+                print(f"年齢検出（SR2）: '{line}'")
+
+            # --- Rule 3 (SR3): 中一...のいずれかがある AND 13(半角/全角/漢字)がある場合 ---
+            # かつ、それらの言葉と同じ行に１３、13、十三のいずれかと同じ行に歳、才、さいがあるばあい
+            # 修正: '才', 'さい', '(', ')' ではなく '歳', '才', 'さい' のいずれか
+            # ルールの解釈: (中一系キーワードがある) AND (13系キーワードがある) AND (歳/才/さいがある) が同じ行にある場合。
+            found_ms_keyword_on_line = any(keyword in line for keyword in middle_school_first_year_keywords)
+            found_13_variation_on_line = bool(re.search(num_13_variations_regex, line))
+            found_age_unit_on_line_for_sr3 = bool(re.search(r'(歳|才|さい)', line)) # SR3の年齢単位は「歳」「才」「さい」のみ
+
+            if found_ms_keyword_on_line and found_13_variation_on_line and found_age_unit_on_line_for_sr3:
+                line_meets_any_sr_condition = True
+                print(f"年齢検出（SR3）: '{line}'")
+            
+            # --- 最終判断: いずれかのSRルールがその行で満たされ、かつ「年齢」という言葉がその行にある場合 ---
+            if line_meets_any_sr_condition and is_age_word_present_on_line:
+                age_violation_detected = True
+                print(f"最終年齢違反検出: 行 '{line}' がルールに適合し、かつ「年齢」が含まれる。")
+                break # 違反が見つかったら行ループを抜ける
         
         # ロール付与が最終的に成功したかどうかのフラグ
         role_granted_successfully = False
@@ -151,7 +200,7 @@ async def _process_message_logic(message: discord.Message):
                 if not worksheet.row_values(1):
                     worksheet.append_row([
                         'タイムスタンプ(UTC)', 'ユーザーID', 'ユーザー名',
-                        '名前があるか', '一言があるか', 'メッセージリンク' # '13歳未満の可能性'を削除
+                        '名前があるか', '一言があるか', '13歳未満の可能性', 'メッセージリンク' 
                     ])
                     print("スプレッドシートにヘッダー行を追加しました。")
 
@@ -162,7 +211,7 @@ async def _process_message_logic(message: discord.Message):
                     message.author.display_name,                           
                     'True' if name_keyword_found else 'False',             
                     'True' if hitokoto_keyword_found else 'False',         
-                    # 'True' if age_violation_detected else 'False', # 年齢検出の項目を削除       
+                    'True' if age_violation_detected else 'False',         
                     message.jump_url                                       
                 ]
                 worksheet.append_row(user_data)
@@ -191,7 +240,7 @@ async def _process_message_logic(message: discord.Message):
                 try:
                     role_to_give = discord.utils.get(guild.roles, id=ROLE_TO_GIVE_ID)
                     if role_to_give:
-                        # 名前と一言の条件を満たせばロールを付与する
+                        # 名前と一言の条件を満たせばロールを付与する (年齢違反の有無に関わらず)
                         if role_to_give not in member.roles:
                             await member.add_roles(role_to_give)
                             print(f'ユーザー {member.display_name} にロール {role_to_give.name} を付与しました。')
@@ -199,8 +248,14 @@ async def _process_message_logic(message: discord.Message):
                             print(f'ユーザー {member.display_name} は既にロール {role_to_give.name} を持っています。')
                         role_granted_successfully = True # ロール付与成功
                         
-                        # 年齢規約違反が検出されてもロールは剥奪しないロジックは削除されました
-                        
+                        # 年齢規約違反が検出されてもロールは剥奪しない
+                        # ユーザー様の要望により、自己紹介を完了したことがロールで示されるようにするため
+                        # （このブロックは削除せず、コメントアウトのまま残します）
+                        # if age_violation_detected:
+                        #     if role_to_give in member.roles: 
+                        #         await member.remove_roles(role_to_give)
+                        #         print(f'ユーザー {member.display_name} からロール {role_to_give.name} を剥奪しました（年齢規約違反のため）。')
+                        #         role_granted_successfully = False 
                     else:
                         print(f'エラー: ロールID {ROLE_TO_GIVE_ID} のロールが見つかりません。')
                         role_granted_successfully = False
@@ -223,9 +278,30 @@ async def _process_message_logic(message: discord.Message):
 
 
         # --- 管理者ログチャンネルへのメッセージ送信と元のメッセージへのリアクション ---
-        # 年齢違反検出ロジックが削除されたため、管理者ログチャンネルへのメッセージ送信は行われません。
         try:
-            # 元のメッセージへのリアクション
+            # 管理者ログチャンネルには年齢違反が検出された場合のみ送信
+            # ここではage_violation_detectedはSR1, SR2, SR3に関わらず「問題あり判定」を意味する
+            if age_violation_detected and admin_log_channel:
+                log_message = f"{AGE_VIOLATION_EMOJI_FOR_ADMIN_LOG} **年齢規約違反検出**\n" \
+                              f"ユーザー: {message.author.mention} (`{message.author.display_name}` / `{message.author.id}`)\n" \
+                              f"メッセージ: {message.jump_url}\n" \
+                              f"検出内容: メッセージにDiscord規約違反の年齢情報が含まれています。\n" 
+                
+                # ロール付与条件（名前と一言）を満たしたかどうかに応じてメッセージを追記
+                if name_keyword_found and hitokoto_keyword_found:
+                    # 年齢違反検出済みだがロール付与成功（自己紹介完了）の場合
+                    log_message += f"→ 自己紹介条件を満たしたため、ロール `{discord.utils.get(guild.roles, id=ROLE_TO_GIVE_ID).name if guild and discord.utils.get(guild.roles, id=ROLE_TO_GIVE_ID) else '不明なロール'}` が付与されました（**規約違反の可能性あり**）。"
+                else:
+                    # 自己紹介条件を満たさないためロール付与せず
+                    log_message += f"→ ロール付与は行われませんでした（自己紹介条件を満たしていません）。"
+                
+                if ENABLE_ADMIN_MENTION and ADMIN_MENTION_STRING:
+                    log_message = f"{ADMIN_MENTION_STRING} {log_message}" # メンションを追加
+                
+                await admin_log_channel.send(log_message)
+                print(f"管理者ログチャンネルに年齢規約違反メッセージを送信しました。")
+            
+            # 元のメッセージへのリアクション (年齢違反の有無に関わらず⭕️/❌を付ける)
             if role_granted_successfully: # ロール付与成功
                 await message.add_reaction(SUCCESS_REACTION_EMOJI)
                 print(f'メッセージに「{SUCCESS_REACTION_EMOJI}」リアクションを追加しました。')
