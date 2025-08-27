@@ -8,7 +8,8 @@
 ソースコードを利用してbotをセットアップするには下の[セットアップ方法](https://github.com/dtt2024git/zikosyoukaikun/blob/main/README.md#%E3%82%BB%E3%83%83%E3%83%88%E3%82%A2%E3%83%83%E3%83%97%E6%96%B9%E6%B3%95)をご覧ください
 
 また、本ソースコードはGoogleのAIモデル Geminiを使用して作成しました
-(管理者へ　再セットアップは[こちら](https://github.com/dtt2024git/zikosyoukaikun/blob/main/README.md#%E7%AE%A1%E7%90%86%E8%80%85%E5%90%91%E3%81%91%E5%BE%A9%E5%85%83%E6%96%B9%E6%B3%95)へ
+
+(管理者へ　復元は[こちら](https://github.com/dtt2024git/zikosyoukaikun/blob/main/README.md#%E7%AE%A1%E7%90%86%E8%80%85%E5%90%91%E3%81%91%E5%BE%A9%E5%85%83%E6%96%B9%E6%B3%95)へ
 
 ## セットアップ方法
 
@@ -54,7 +55,7 @@
 これで完成
 
 ## 管理者向け　復元方法
-!!サーバー切り替え時は`last_processed_timestamp.txt`とスプレッドシートの内容を削除
+!!復元時は`last_processed_timestamp.txt`とスプレッドシートの内容を削除
 
 [Discord Developer Portal](https://discord.com/developers/applications)へアクセス
 
