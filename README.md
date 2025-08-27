@@ -2,8 +2,11 @@
 
 ## 概要
 本ソースコードはDiscordServer「[つくば科学万博　冨田勲さんの幻の曲を探す会](https://discord.gg/kZFtnEs4HD)」で提供させていただいている自己紹介君のソースコードです
+
 仕様・使い方は記述してあるため、他のユーザーが利用しても問題はありませんが、不具合等のさまざまな**責任は一切負いません**
+
 ソースコードを利用してbotをセットアップするには下の[セットアップ方法](https://github.com/dtt2024git/zikosyoukaikun/blob/main/README.md#%E3%82%BB%E3%83%83%E3%83%88%E3%82%A2%E3%83%83%E3%83%97%E6%96%B9%E6%B3%95)をご覧ください
+
 また、本ソースコードはGoogleのAIモデル Geminiを使用して作成しました
 (管理者へ　再セットアップは[こちら](https://github.com/dtt2024git/zikosyoukaikun/blob/main/README.md#%E7%AE%A1%E7%90%86%E8%80%85%E5%90%91%E3%81%91%E5%BE%A9%E5%85%83%E6%96%B9%E6%B3%95)へ
 
@@ -52,28 +55,46 @@
 
 ## 管理者向け　復元方法
 !!サーバー切り替え時は`last_processed_timestamp.txt`とスプレッドシートの内容を削除
+
 [Discord Developer Portal](https://discord.com/developers/applications)へアクセス
+
 当該BOTを選択->BOT->ResetTokenでトークンをリセット＆コピー
+
 ＞一時的に保存（ローカル）
+
 [Google Cloud Console](https://console.cloud.google.com/)へアクセス
+
 当該プロジェクトに切り替える
+
 APIとサービス->認証情報->サービスアカウント内の本BOT用アカウント->鍵->キーを追加->新しい鍵を追加
+
 でキーを追加してjson形式でダウンロード
+
 以前までのキーは無効に（削除）
+
 jsonファイルを`service_account.json`に名前を変える
+
 そこからサーバーのコンソールで、
+
 ```bash
 sudo apt install python3 python3-venv python3-pip git screen -y
 screen -r
 git clone https://github.com/dtt2024git/zikosyoukaikun
 cd zikosyoukaikun
 ```
+
 jsonファイルをサーバーへscpかsftpでアップロード（公開鍵認証で）
+
 なにかしら（nano等）でmain.pyを修正
+
 ・スプレッドシート関係
+
 ・チャンネルID設定
+
 ・ロールID設定
+
 そこから
+
 ```bash
 python -m venv ziko-venv
 source ziko-venv/bin/activate
