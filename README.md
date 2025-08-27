@@ -1,13 +1,10 @@
-# discord-self-intro-role-bot
+# 自己紹介君
 
 ## 概要
-このDiscordボットは、特定のチャンネルに投稿された自己紹介メッセージを監視し、メッセージの内容に基づいてロールを付与または管理します。また、Googleスプレッドシートにメッセージログを記録し、特定の年齢規約違反の可能性がある投稿を管理者チャンネルに通知する機能も備えています。
-
-## 機能
-- 自己紹介チャンネルでのロール自動付与（名前と一言のキーワード検出）
-- 自己紹介メッセージのGoogleスプレッドシートへのログ記録
-- Discord規約に違反する可能性のある年齢情報の検出と管理者への通知（設定可能）
-- ユーザーの投稿チャンネルへのリアクションによる処理結果の表示
+本ソースコードはDiscordServer「[つくば科学万博　冨田勲さんの幻の曲を探す会](https://discord.gg/kZFtnEs4HD)」で提供させていただいている自己紹介君のソースコードです
+仕様・使い方は記述してあるため、他のユーザーが利用しても問題はありませんが、不具合等のさまざまな**責任は一切負いません**
+ソースコードを利用してbotをセットアップするには下の**セットアップ方法**をご覧ください
+また、本ソースコードはGoogleのAIモデル Geminiを使用して作成しました
 
 ## セットアップ方法
 
@@ -50,9 +47,39 @@
     ```bash
     python main.py
     ```
+これで完成
 
-## AI生成について
-このボットのコードは、GoogleのAIモデルによって生成されました。
+## 管理者向け　復元方法
+!!サーバー切り替え時は`last_processed_timestamp.txt`とスプレッドシートの内容を削除
+[Discord Developer Portal](https://discord.com/developers/applications)へアクセス
+当該BOTを選択->BOT->ResetTokenでトークンをリセット＆コピー
+＞一時的に保存（ローカル）
+[Google Cloud Console](https://console.cloud.google.com/)へアクセス
+当該プロジェクトに切り替える
+APIとサービス->認証情報->サービスアカウント内の本BOT用アカウント->鍵->キーを追加->新しい鍵を追加
+でキーを追加してjson形式でダウンロード
+以前までのキーは無効に（削除）
+jsonファイルを`service_account.json`に名前を変える
+そこからサーバーのコンソールで、
+```bash
+sudo apt install python3 python3-venv python3-pip git screen -y
+screen -r
+git clone https://github.com/dtt2024git/zikosyoukaikun
+cd zikosyoukaikun
+```
+jsonファイルをサーバーへscpかsftpでアップロード（公開鍵認証で）
+なにかしら（nano等）でmain.pyを修正
+・スプレッドシート関係
+・チャンネルID設定
+・ロールID設定
+そこから
+```bash
+python -m venv ziko-venv
+source ziko-venv/bin/activate
+pip install -r requirements.txt
+python main.py
+```
+これで動くはず
 
 ## ライセンス
 このプロジェクトは [Apache-2.0 License](https://www.apache.org/licenses/LICENSE-2.0) の下で公開されています。
