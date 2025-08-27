@@ -3,7 +3,8 @@ import gspread
 import datetime
 import asyncio
 import re
-from typing import Optional
+import os # ファイル操作のためにインポート
+from typing import Optional, Dict
 
 # ボットのインテントを設定
 # メッセージの内容とメンバー情報を読み取るために必要です。
@@ -22,29 +23,34 @@ bot = discord.Client(intents=intents)
 # あなたのボットのトークンをここに貼り付けてください
 YOUR_BOT_TOKEN = ''
 # ロールを付与したいチャンネルのIDをここに貼り付けてください
-TARGET_CHANNEL_ID =
+TARGET_CHANNEL_ID = 
 # 付与したいロールのIDをここに貼り付けてください
-ROLE_TO_GIVE_ID =
+ROLE_TO_GIVE_ID = 
 
 # 管理者向けログを送信するチャンネルのIDをここに貼り付けてください
-ADMIN_LOG_CHANNEL_ID = 123456789012345678
+ADMIN_LOG_CHANNEL_ID = 
 
 # Discord規約違反の年齢（13歳未満）が検出された際の絵文字 (管理者ログでのみ使用)
 AGE_VIOLATION_EMOJI_FOR_ADMIN_LOG = '🚫'
 
 # ロール付与成功時のリアクション絵文字（元のメッセージに表示）
-SUCCESS_REACTION_EMOJI = '⭕' 
+SUCCESS_REACTION_EMOJI = ''
 
 # ロール付与失敗時または条件不適合時のリアクション絵文字（元のメッセージに表示）
-FAILURE_REACTION_EMOJI = '❌' 
+FAILURE_REACTION_EMOJI = ''
 
 # 年齢規約違反時に管理者ログチャンネルでメンションを有効にするか (True/False)
-ENABLE_ADMIN_MENTION = True # Trueにするとメンションが飛びます
+ENABLE_ADMIN_MENTION = False # Trueにするとメンションが飛びます
 
 # 管理者ログチャンネルでメンションする文字列 (ロールIDまたはユーザーID)
 # 例: '<@&ロールID>' または '<@ユーザーID>'
 ADMIN_MENTION_STRING = '<@&123456789012345678>' # ← メンションしたいロールIDまたはユーザーIDに設定！
 
+# --- 💡 新規追加: 管理者向けコマンド設定 ---
+# ボット管理者のユーザーID
+ADMIN_USER_ID = 
+# ログとシートをクリアするための特定のキーワード
+RESET_COMMAND_KEYWORD = 'リセット'
 
 # -- Google Sheets API --
 
@@ -74,6 +80,7 @@ except Exception as e:
 
 # 管理者ログチャンネルオブジェクトをグローバル変数として定義
 admin_log_channel: Optional[discord.TextChannel] = None
+spreadsheet: Optional[gspread.Spreadsheet] = None
 
 
 def get_last_processed_timestamp() -> Optional[datetime.datetime]:
@@ -111,11 +118,69 @@ def update_last_processed_timestamp(timestamp: datetime.datetime):
     print(f"最終処理タイムスタンプを更新しました: {timestamp}")
 
 
+def _reset_log_file():
+    """
+    ログファイル `LAST_PROCESSED_FILE` を削除またはクリアする。
+    """
+    try:
+        if os.path.exists(LAST_PROCESSED_FILE):
+            os.remove(LAST_PROCESSED_FILE)
+            print(f"ログファイル '{LAST_PROCESSED_FILE}' を削除しました。")
+    except Exception as e:
+        print(f"ログファイルの削除中にエラーが発生しました: {e}")
+
+
+async def _clear_google_sheets(channel: discord.TextChannel):
+    """
+    指定されたスプレッドシートのワークシートをクリアする。
+    """
+    global spreadsheet
+    # スプレッドシートへの接続が確立されていなければ、再度初期化を試みる
+    if not spreadsheet and gc:
+        try:
+            spreadsheet = gc.open(SPREADSHEET_NAME)
+            print("スプレッドシートへの接続を再試行しました。")
+        except gspread.exceptions.SpreadsheetNotFound:
+            await channel.send(f"エラー: スプレッドシート '{SPREADSHEET_NAME}' が見つかりません。")
+            print(f"エラー: スプレッドシートが見つからず、クリアできませんでした。")
+            return
+        except Exception as e:
+            await channel.send(f"エラー: スプレッドシートへの接続に失敗しました: {e}")
+            print(f"スプレッドシートへの接続エラー: {e}")
+            return
+
+    if not spreadsheet:
+        await channel.send("エラー: Googleスプレッドシートへの接続が確立されていません。")
+        print("スプレッドシートが未接続のため、クリアできませんでした。")
+        return
+
+    try:
+        # ログシートをクリア
+        log_worksheet = spreadsheet.worksheet(WORKSHEET_NAME)
+        log_worksheet.clear()
+        print(f"スプレッドシートの '{WORKSHEET_NAME}' シートをクリアしました。")
+
+        # 念のため、クリア後のヘッダー行を追加
+        log_worksheet.append_row([
+            'タイムスタンプ(UTC)', 'ユーザーID', 'ユーザー名',
+            '名前があるか', '一言があるか', '13歳未満の可能性', 'メッセージリンク'
+        ])
+        await channel.send("✅ Googleスプレッドシートのログをクリアしました。")
+
+    except gspread.exceptions.WorksheetNotFound as e:
+        await channel.send(f"エラー: シート '{e.args[0]}' が見つかりません。")
+        print(f"エラー: シートが見つからず、クリアできませんでした: {e}")
+    except Exception as e:
+        await channel.send(f"エラー: スプレッドシートのクリア中に予期せぬエラーが発生しました: {e}")
+        print(f"スプレッドシートのクリア中にエラーが発生しました: {e}")
+
+
 async def _process_message_logic(message: discord.Message):
     """
     個々のメッセージに対する処理ロジックを実行する。
     メッセージの内容チェック、ロールの付与、スプレッドシートへのログ記録、リアクションの追加を行う。
     """
+    global spreadsheet
     # ボット自身のメッセージには反応しない
     if message.author == bot.user:
         return
@@ -129,11 +194,11 @@ async def _process_message_logic(message: discord.Message):
         # 名前関連キーワードの検出
         name_keyword_found = any(keyword in message_content_lower for keyword in ['名前', 'ニックネーム', 'ハンドルネーム', 'ハンネ' , 'ペンネ' , 'hn' , 'ネーム' , 'ｈｎ'])
         # 「一言」キーワードの検出
-        hitokoto_keyword_found = '一言' in message_content_lower
+        hitokoto_keyword_found = any(keyword in message_content_lower for keyword in ['一言', 'ひと言', 'ひとこと', '一こと' , '１こと' , '１言' , '1こと' , '1言'])
 
         # --- 年齢違反の検出 ---
         age_violation_detected = False
-        
+
         # メッセージを改行で分割し、各行をチェック
         lines = message.content.lower().split('\n')
 
@@ -142,10 +207,10 @@ async def _process_message_logic(message: discord.Message):
         num_0_12_regex = r'\b(0|1|2|3|4|5|6|7|8|9|10|11|12|０|１|２|３|４|５|６|７|８|９|１０|１１|１２)\b'
         # SR1の年齢単位と括弧
         age_unit_and_parentheses_regex = r'(歳|才|さい|\(|\))'
-        
+
         # SR2: 小学生関連キーワード
         elementary_keywords = ['小学生', '小学', '小1', '小２', '小3', '小４', '小5', '小６', '小１', '小２', '小３', '小４', '小５', '小６']
-        
+
         # SR3: 中学1年生関連キーワード
         middle_school_first_year_keywords = ['中一', '中1', '中学1年生', '中１', '中学1年', '中学１年', '中学１年生']
         # SR3: 13の数字（半角/全角/漢字）
@@ -153,9 +218,9 @@ async def _process_message_logic(message: discord.Message):
 
         for line in lines:
             # この行がSR1, SR2, SR3のいずれかの条件に単体で適合したか
-            line_meets_any_sr_condition = False 
+            line_meets_any_sr_condition = False
             # この行に「年齢」という言葉があるか
-            is_age_word_present_on_line = '年齢' in line 
+            is_age_word_present_on_line = '年齢' in line
 
             # --- Rule 1 (SR1): 0~12の数字と歳、才、さい、（、）、(、)がいずれか1つ以上同じ行にある場合 ---
             # 例: 「私は10歳です」「私は(5才)」
@@ -180,39 +245,42 @@ async def _process_message_logic(message: discord.Message):
             if found_ms_keyword_on_line and found_13_variation_on_line and found_age_unit_on_line_for_sr3:
                 line_meets_any_sr_condition = True
                 print(f"年齢検出（SR3）: '{line}'")
-            
+
             # --- 最終判断: いずれかのSRルールがその行で満たされ、かつ「年齢」という言葉がその行にある場合 ---
             if line_meets_any_sr_condition and is_age_word_present_on_line:
                 age_violation_detected = True
                 print(f"最終年齢違反検出: 行 '{line}' がルールに適合し、かつ「年齢」が含まれる。")
                 break # 違反が見つかったら行ループを抜ける
-        
+
         # ロール付与が最終的に成功したかどうかのフラグ
         role_granted_successfully = False
 
         # --- スプレッドシートへのメッセージログ書き込み処理 (指定チャンネルの全メッセージが対象) ---
         if gc:
             try:
-                spreadsheet = gc.open(SPREADSHEET_NAME)
+                # ログを書き込む前にスプレッドシートへの接続を確認
+                if not spreadsheet:
+                    spreadsheet = gc.open(SPREADSHEET_NAME)
+
                 worksheet = spreadsheet.worksheet(WORKSHEET_NAME)
 
                 # ヘッダー行が存在しない場合、追加する
                 if not worksheet.row_values(1):
                     worksheet.append_row([
                         'タイムスタンプ(UTC)', 'ユーザーID', 'ユーザー名',
-                        '名前があるか', '一言があるか', '13歳未満の可能性', 'メッセージリンク' 
+                        '名前があるか', '一言があるか', '13歳未満の可能性', 'メッセージリンク'
                     ])
                     print("スプレッドシートにヘッダー行を追加しました。")
 
                 # ユーザー情報をリストとして準備
                 user_data = [
-                    datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 
-                    str(message.author.id),                                
-                    message.author.display_name,                           
-                    'True' if name_keyword_found else 'False',             
-                    'True' if hitokoto_keyword_found else 'False',         
-                    'True' if age_violation_detected else 'False',         
-                    message.jump_url                                       
+                    datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    str(message.author.id),
+                    message.author.display_name,
+                    'True' if name_keyword_found else 'False',
+                    'True' if hitokoto_keyword_found else 'False',
+                    'True' if age_violation_detected else 'False',
+                    message.jump_url
                 ]
                 worksheet.append_row(user_data)
                 print(f'スプレッドシートにログ情報を書き込みました: {message.author.display_name} (メッセージID: {message.id})')
@@ -247,15 +315,7 @@ async def _process_message_logic(message: discord.Message):
                         else:
                             print(f'ユーザー {member.display_name} は既にロール {role_to_give.name} を持っています。')
                         role_granted_successfully = True # ロール付与成功
-                        
-                        # 年齢規約違反が検出されてもロールは剥奪しない
-                        # ユーザー様の要望により、自己紹介を完了したことがロールで示されるようにするため
-                        # （このブロックは削除せず、コメントアウトのまま残します）
-                        # if age_violation_detected:
-                        #     if role_to_give in member.roles: 
-                        #         await member.remove_roles(role_to_give)
-                        #         print(f'ユーザー {member.display_name} からロール {role_to_give.name} を剥奪しました（年齢規約違反のため）。')
-                        #         role_granted_successfully = False 
+
                     else:
                         print(f'エラー: ロールID {ROLE_TO_GIVE_ID} のロールが見つかりません。')
                         role_granted_successfully = False
@@ -285,22 +345,25 @@ async def _process_message_logic(message: discord.Message):
                 log_message = f"{AGE_VIOLATION_EMOJI_FOR_ADMIN_LOG} **年齢規約違反検出**\n" \
                               f"ユーザー: {message.author.mention} (`{message.author.display_name}` / `{message.author.id}`)\n" \
                               f"メッセージ: {message.jump_url}\n" \
-                              f"検出内容: メッセージにDiscord規約違反の年齢情報が含まれています。\n" 
-                
+                              f"検出内容: メッセージにDiscord規約違反の年齢情報が含まれています。\n"
+
                 # ロール付与条件（名前と一言）を満たしたかどうかに応じてメッセージを追記
                 if name_keyword_found and hitokoto_keyword_found:
                     # 年齢違反検出済みだがロール付与成功（自己紹介完了）の場合
-                    log_message += f"→ 自己紹介条件を満たしたため、ロール `{discord.utils.get(guild.roles, id=ROLE_TO_GIVE_ID).name if guild and discord.utils.get(guild.roles, id=ROLE_TO_GIVE_ID) else '不明なロール'}` が付与されました（**規約違反の可能性あり**）。"
+                    role_name = "不明なロール"
+                    if guild and discord.utils.get(guild.roles, id=ROLE_TO_GIVE_ID):
+                        role_name = discord.utils.get(guild.roles, id=ROLE_TO_GIVE_ID).name
+                    log_message += f"→ 自己紹介条件を満たしたため、ロール `{role_name}` が付与されました（**規約違反の可能性あり**）。"
                 else:
                     # 自己紹介条件を満たさないためロール付与せず
                     log_message += f"→ ロール付与は行われませんでした（自己紹介条件を満たしていません）。"
-                
+
                 if ENABLE_ADMIN_MENTION and ADMIN_MENTION_STRING:
                     log_message = f"{ADMIN_MENTION_STRING} {log_message}" # メンションを追加
-                
+
                 await admin_log_channel.send(log_message)
                 print(f"管理者ログチャンネルに年齢規約違反メッセージを送信しました。")
-            
+
             # 元のメッセージへのリアクション (年齢違反の有無に関わらず⭕️/❌を付ける)
             if role_granted_successfully: # ロール付与成功
                 await message.add_reaction(SUCCESS_REACTION_EMOJI)
@@ -331,16 +394,16 @@ async def _remove_bot_reactions_from_channel(channel: discord.TextChannel):
             # メッセージに付いている各リアクションをチェック
             for reaction in message.reactions:
                 # そのリアクションをボットが追加したかどうかを確認
-                async for user in reaction.users():
-                    if user == bot.user:
-                        # ボットが追加したリアクションであれば削除
-                        await message.remove_reaction(reaction.emoji, bot.user)
-                        removed_count += 1
-                        print(f"メッセージ {message.id} からボットのリアクション '{reaction.emoji}' を削除しました。")
-                        break # このリアクションは処理したので次のリアクションへ
-            
-            # Discord APIのレートリミットを考慮して、適度に待機
-            await asyncio.sleep(0.5) 
+                # asyncio.gatherを使用して非同期にユーザーをリスト化
+                users = [user async for user in reaction.users()]
+                if bot.user in users:
+                    # ボットが追加したリアクションであれば削除
+                    await message.remove_reaction(reaction.emoji, bot.user)
+                    removed_count += 1
+                    print(f"メッセージ {message.id} からボットのリアクション '{reaction.emoji}' を削除しました。")
+                    # Discord APIのレートリミットを考慮して、適度に待機
+                    await asyncio.sleep(0.5)
+
         except discord.Forbidden:
             print(f"エラー: メッセージ {message.id} からリアクションを削除する権限がありません。")
         except discord.HTTPException as e:
@@ -354,8 +417,8 @@ async def _remove_bot_reactions_from_channel(channel: discord.TextChannel):
 
 
 async def _process_messages_in_channel(
-    channel: discord.TextChannel, 
-    after_dt: Optional[datetime.datetime] = None, 
+    channel: discord.TextChannel,
+    after_dt: Optional[datetime.datetime] = None,
     limit: Optional[int] = None
 ) -> Optional[datetime.datetime]:
     """
@@ -363,7 +426,7 @@ async def _process_messages_in_channel(
     これは主に、ボットがオフラインだった間のメッセージをキャッチアップするために使用される。
     """
     messages_to_process = []
-    
+
     # メッセージ取得の条件に応じて履歴を遡る
     if after_dt:
         # 指定日時以降のメッセージを古い順に取得
@@ -397,20 +460,21 @@ async def _process_messages_in_channel(
         if message.author == bot.user or message.type != discord.MessageType.default:
             skipped_count += 1
             continue
-        
+
         await _process_message_logic(message)
         processed_count += 1
         # Discordのメッセージの作成時刻はUTCなので、そのまま記録
-        latest_message_timestamp = message.created_at 
-        
+        latest_message_timestamp = message.created_at
+
         # Discord APIのレートリミットを考慮して、適度に待機
-        await asyncio.sleep(0.5) 
-            
+        await asyncio.sleep(0.5)
+
     print(f"過去メッセージの処理が完了しました。\n"
           f"処理されたメッセージ数: {processed_count}\n"
           f"スキップされたメッセージ数 (ボットやシステムメッセージなど): {skipped_count}")
-          
+
     return latest_message_timestamp
+
 
 @bot.event
 async def on_ready():
@@ -422,6 +486,19 @@ async def on_ready():
         print(f"エラー: 設定されたターゲットチャンネルID {TARGET_CHANNEL_ID} が見つかりません。")
         return
 
+    # Google Sheets APIの初期化
+    global gc, spreadsheet
+    try:
+        gc = gspread.service_account(filename=SERVICE_ACCOUNT_FILE)
+        spreadsheet = gc.open(SPREADSHEET_NAME)
+        print("Google Sheets API クライアントとスプレッドシートを初期化しました。")
+    except Exception as e:
+        print(f"Google Sheets API の初期化に失敗しました: {e}")
+        print(f"サービスアカウントファイル '{SERVICE_ACCOUNT_FILE}' が存在するか、権限が正しいか、"
+              f"スプレッドシート '{SPREADSHEET_NAME}' が存在するか、サービスアカウントと共有されているか確認してください。")
+        # 失敗した場合は以降のシート関連処理をスキップ
+        spreadsheet = None
+
     # グローバル変数に管理者ログチャンネルを代入
     global admin_log_channel
     admin_log_channel = bot.get_channel(ADMIN_LOG_CHANNEL_ID)
@@ -430,7 +507,7 @@ async def on_ready():
 
 
     last_processed_dt = get_last_processed_timestamp()
-    
+
     if last_processed_dt:
         # 最終処理時刻が記録されている場合、その時刻以降のメッセージを処理
         print(f"最終処理時刻 {last_processed_dt.isoformat()} 以降のメッセージを自動で処理します。")
@@ -443,24 +520,46 @@ async def on_ready():
         # 最終処理時刻の記録がない場合（初回起動など）、過去のリアクションをクリーンアップし、最新のメッセージを処理
         print(f"最終処理時刻の記録が見つかりません。チャンネルのリアクションをクリーンアップします。")
         await _remove_bot_reactions_from_channel(target_channel) # ログがないのでリアクションを全て削除
-        
+
         print(f"最新の {DEFAULT_INITIAL_PROCESS_LIMIT} 件のメッセージを処理します。")
         latest_processed_dt = await _process_messages_in_channel(target_channel, limit=DEFAULT_INITIAL_PROCESS_LIMIT)
         if latest_processed_dt:
             update_last_processed_timestamp(latest_processed_dt)
 
+
 @bot.event
 async def on_message(message):
-    """新しいメッセージが送信された際に実行される。"""
-    # ボット自身のメッセージは処理しない
+    # Bot自身のメッセージは無視する
     if message.author == bot.user:
         return
-
-    # リアルタイムで受信したメッセージのタイムスタンプを常に最新として更新
-    # message.created_at はUTCタイムゾーン情報を持つdatetimeオブジェクトです。
-    update_last_processed_timestamp(message.created_at)
-    # メッセージ処理ロジックを実行
-    await _process_message_logic(message)
+    # Botへのメンションかどうかを判定
+    if bot.user.mentioned_in(message):
+        if message.author.id == ADMIN_USER_ID and RESET_COMMAND_KEYWORD in message.content:
+            await message.channel.send("🚧 ログファイルとスプレッドシートをクリアしています...")
+            # ログファイルをリセット
+            _reset_log_file()
+            # スプレッドシートのデータをクリア
+            await _clear_google_sheets(message.channel)
+            await message.channel.send("✅ クリアが完了しました。ボットを再起動します。")
+            # ボットをシャットダウン
+            await bot.close()
+            return # これ以上処理しない
+        else:
+            # 逆ギレのセリフリスト
+            outbursts = [
+                f"{message.author.mention}！うるせえ！なんか用かよ！",
+                f"おい、{message.author.mention}か！話しかけてくんな！",
+                f"{message.author.mention}、人のことメンションしてんじゃねーよ！",
+                f"あ？{message.author.mention}か。もう知らねー！"
+            ]
+            import random
+            await message.channel.send(random.choice(outbursts))
+    else:
+        # リアルタイムで受信したメッセージのタイムスタンプを常に最新として更新
+        # message.created_at はUTCタイムゾーン情報を持つdatetimeオブジェクトです。
+        update_last_processed_timestamp(message.created_at)
+        # メッセージ処理ロジックを実行
+        await _process_message_logic(message)
 
 # ボットを実行
 bot.run(YOUR_BOT_TOKEN)
